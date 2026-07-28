@@ -1,0 +1,22 @@
+<?php
+return [
+    'siteKey' => env('SHUGOI_SITE_KEY', ''),
+    'secret' => env('SHUGOI_SECRET', ''),
+    'signingSecret' => env('SHUGOI_SIGNING_SECRET'),
+    'allowlist' => ['/api', '/legal', '/_debugbar', '/telescope', '/horizon', '/nova'],
+    'headlessPatterns' => [],
+    'botWhitelist' => [],
+    'baseUrl' => env('SHUGOI_BASE_URL', 'https://shugoi.com/api/v1'),
+    'internalUrl' => env('SHUGOI_INTERNAL_URL'),
+    'debug' => env('SHUGOI_DEBUG', false),
+    'autoInject' => true,
+    'restrictedAccess' => false,
+    'extraDirectives' => [],
+    'csp' => true,
+    'blockStatus' => 403,
+    'locale' => null,
+    'blockPage' => null,
+    'splitRender' => true,
+    'multiProcess' => false,
+    'verifyBots' => true,
+];
