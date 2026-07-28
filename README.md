@@ -45,7 +45,6 @@ composer require shugoi/shugoi-php
 ```php
 ->withMiddleware(function (Middleware $middleware) {
     $middleware->append(\Shugoi\Laravel\ShugoiMiddleware::class);
-    $middleware->excludeFrom(\Shugoi\Laravel\ShugoiMiddleware::class, ['__shugoi/*']);
 })
 ```
 

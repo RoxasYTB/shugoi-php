@@ -13,6 +13,11 @@ class ShugoiMiddleware
 
     public function handle(Request $request, Closure $next): mixed
     {
+        // Skip internal routes
+        if (str_starts_with($request->path(), '__shugoi/')) {
+            return $next($request);
+        }
+
         $psrFactory = new Psr17Factory();
         $psrRequest = NyholmPsr7Bridge::fromLaravelRequest($request);
 
