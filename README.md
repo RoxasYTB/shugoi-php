@@ -160,7 +160,6 @@ For Laravel, we already handle this in the ServiceProvider. For standalone, add 
 ## Testing
 
 ```bash
-# Bot should be blocked
 $ curl http://localhost:3100/
 +---------------------------------------------+
 |           BLOCKED BY SHUGOI                 |
@@ -173,14 +172,9 @@ $ curl http://localhost:3100/
 |                                             |
 |  - contact: support@shugoi.com -            |
 +---------------------------------------------+
-
-# Browser with proper headers should pass
-$ curl -A "Mozilla/5.0 Chrome/120" \
-  -H "Accept-Language: en-US" \
-  -H "Sec-Fetch-Dest: document" \
-  -H "Sec-Fetch-Mode: navigate" \
-  http://localhost:3100/
 ```
+
+All automated requests (curl, wget, python, etc.) are blocked. Only legitimate browsers with proper fingerprint signals pass through the protection.
 
 ## Architecture
 
