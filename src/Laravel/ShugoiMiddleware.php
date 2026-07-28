@@ -5,7 +5,7 @@ use Illuminate\Http\Request;
 use Closure;
 use Shugoi\Middleware as PsrMiddleware;
 use Nyholm\Psr7\Factory\Psr17Factory;
-use Nyholm\Psr7Bridge\NyholmPsr7Bridge;
+use Nyholm\Psr7\ServerRequest;
 
 class ShugoiMiddleware
 {
@@ -13,25 +13,58 @@ class ShugoiMiddleware
 
     public function handle(Request $request, Closure $next): mixed
     {
-        // Skip internal routes
         if (str_starts_with($request->path(), '__shugoi/')) {
             return $next($request);
         }
 
+        // Convert Laravel request to PSR-7
         $psrFactory = new Psr17Factory();
-        $psrRequest = NyholmPsr7Bridge::fromLaravelRequest($request);
+        $uri = $psrFactory->createUri($request->fullUrl());
+        $headers = $request->headers->all();
+        $body = $psrFactory->createStream($request->getContent());
+        $serverParams = $request->server->all();
+        $psrRequest = new ServerRequest(
+            $request->method(),
+            $uri,
+            $headers,
+            $body,
+            '1.1',
+            $serverParams
+        );
 
         $handler = new class($next) implements \Psr\Http\Server\RequestHandlerInterface {
             public function __construct(private $next) {}
             public function handle(\Psr\Http\Message\ServerRequestInterface $request): \Psr\Http\Message\ResponseInterface
             {
-                $laravelRequest = NyholmPsr7Bridge::toLaravelRequest($request);
+                // Rebuild Laravel request
+                $method = $request->getMethod();
+                $uri = (string)$request->getUri();
+                $headers = $request->getHeaders();
+                $body = (string)$request->getBody();
+                $laravelRequest = Request::create($uri, $method, [], [], [], [], $body);
+                foreach ($headers as $name => $values) {
+                    $laravelRequest->headers->set($name, $values);
+                }
                 $response = ($this->next)($laravelRequest);
-                return NyholmPsr7Bridge::fromLaravelResponse($response);
+                // Convert Laravel response to PSR-7
+                $psrFactory = new Psr17Factory();
+                $psrResponse = new \Nyholm\Psr7\Response(
+                    $response->getStatusCode(),
+                    $response->headers->all(),
+                    $psrFactory->createStream($response->getContent())
+                );
+                return $psrResponse;
             }
         };
 
         $psrResponse = $this->middleware->process($psrRequest, $handler);
-        return NyholmPsr7Bridge::toLaravelResponse($psrResponse);
+
+        // Convert PSR-7 response back to Laravel response
+        $laravelResponse = response(
+            (string)$psrResponse->getBody(),
+            $psrResponse->getStatusCode(),
+            $psrResponse->getHeaders()
+        );
+        return $laravelResponse;
     }
 }

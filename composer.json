@@ -7,18 +7,18 @@
         "php": ">=8.2",
         "guzzlehttp/guzzle": "^7.0",
         "psr/http-server-middleware": "^1.0",
-        "psr/http-message": "^2.0"
+        "psr/http-message": "^2.0",
+        "nyholm/psr7": "^1.8"
     },
     "require-dev": {
         "phpunit/phpunit": "^11.0",
         "orchestra/testbench": "^9.0",
-        "nyholm/psr7": "^1.8",
-        "nyholm/psr7-bridge": "^2.0",
         "mockery/mockery": "^1.6"
     },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
     "suggest": {
-        "nyholm/psr7": "Required for Laravel integration (PSR-7 to Laravel bridge)",
-        "nyholm/psr7-bridge": "Required for Laravel integration"
+        "nyholm/psr7": "Required for Laravel integration (PSR-7 HTTP message implementation)"
     },
     "autoload": {
         "psr-4": { "Shugoi\\": "src/" }
