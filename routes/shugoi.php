@@ -3,4 +3,4 @@ use Illuminate\Support\Facades\Route;
 use Shugoi\Laravel\ShugoiController;
 
 Route::get('/__shugoi/render', [ShugoiController::class, 'render']);
-Route::head('/__shugoi/healthcheck', function () { return response('', 200); });
+Route::match(['get', 'head'], '/__shugoi/healthcheck', fn() => response('', 200));
