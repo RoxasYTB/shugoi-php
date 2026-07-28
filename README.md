@@ -3,7 +3,23 @@
 ![PHP](https://img.shields.io/badge/PHP-8.2%2B-777bb4)
 ![Laravel](https://img.shields.io/badge/Laravel-11%2B-ff2d20)
 
-Shugoi is an anti-abuse protection layer for PHP applications. It combines browser fingerprinting, headless browser detection, rate limiting, and split-render technology to protect your web apps from bots, scrapers, and automated attacks.
+Shugoi is a full-featured anti-abuse protection layer for PHP applications. It combines edge-level request blocking, client-side browser fingerprinting via Web Workers, split-render technology with single-use tokens, code obfuscation, and multi-layered detection to protect your web apps from bots, scrapers, automated attacks, and fraud.
+
+### Features
+
+- **Edge blocking** — Headless browser detection (curl, wget, python, puppeteer, etc.), fake browser detection (missing Sec-Fetch headers), rate limiting with configurable thresholds
+- **Client-side fingerprinting** — Tor Browser detection, VM/machine detection, anti-detect browser detection, headless Chrome/Puppeteer detection via Web Worker
+- **Whitelist** — machineId-based whitelist managed from the Shugoi dashboard, bypasses all client-side checks
+- **Split-render** — Original HTML is stored server-side with a signed single-use token; the client receives an eval bootcode skeleton. Guards run, and if the browser is legitimate, `rd()` fetches the real HTML via `/__shugoi/render`
+- **Content replacement detection** — If the render endpoint is called with an invalid/consumed token and `enableContentReplacementCheck` is enabled, a block card "Remplacement de contenu client détecté" is shown with full neobrutalist styling
+- **CSP injection** — Automatic Content-Security-Policy header with proper origins for scripts, fonts, images; optionally extensible via `extraDirectives`
+- **Bot verification** — Reverse DNS (FCrDNS) verification for Googlebot, Bingbot, YandexBot, Applebot, etc.
+- **Obfuscation** — The eval bootcode is obfuscated (function renaming, line shuffling, XOR string encryption, decoder injection) before Unicode encoding
+- **Block page** — Full neobrutalist shield page with Alex Brush font, favicon + brand images, pink h2, noise SVG background, countdown timer for rate limits. Consistent ASCII block page for non-browser clients
+- **Multi-process support** — Shared disk-based HTML token storage for PHP built-in server, Laravel Octane, or any multi-worker setup
+- **PSR-15 middleware** — Framework-agnostic, compatible with any PSR-15 implementation
+- **Laravel integration** — ServiceProvider with auto-wiring, HTTP middleware wrapper, Facade, Blade directives (`@shugoiHead`, `@shugoiBody`), Artisan commands (`shugoi:setup`, `shugoi:check`)
+- **Localization** — Full FR/EN support for block pages and error messages
 
 ## Requirements
 
