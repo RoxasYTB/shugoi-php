@@ -40,28 +40,25 @@ composer require shugoi/shugoi-php
 composer require shugoi/shugoi-php
 ```
 
-**1.** Register the middleware in `bootstrap/app.php`:
+Add to `.env`:
+```env
+SHUGOI_SITE_KEY=sg_sk_live_xxxx
+SHUGOI_SECRET=your_site_secret
+```
 
+Add to `bootstrap/app.php`:
 ```php
 ->withMiddleware(function (Middleware $middleware) {
     $middleware->append(\Shugoi\Laravel\ShugoiMiddleware::class);
 })
 ```
 
-**2.** Set environment variables in `.env`:
-
-```env
-SHUGOI_SITE_KEY=sg_sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-SHUGOI_SECRET=your_site_secret
-```
-
-**3.** Verify:
-
+Verify:
 ```bash
 php artisan shugoi:setup
 ```
 
-Done. All requests are now protected. Blocked clients get `BLOCKED BY SHUGOI` (bots) or a full shield page (browsers). Legitimate browsers pass through with guard scripts injected automatically.
+Done. All HTTP requests are now protected.
 
 ## Demo
 
