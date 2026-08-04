@@ -202,6 +202,10 @@ class CoreTest extends TestCase
         $second = $core->evaluate($ctx);
         $this->assertNotNull($second);
         $this->assertEquals(307, $second['status']);
+        // Round 17 : rejeu depuis une AUTRE IP → 307 aussi (single-use GLOBAL, plus de bypass cross-IP).
+        $crossIp = $core->evaluate(['path' => '/', 'ua' => 'Mozilla/5.0 Chrome/120', 'ip' => '9.9.9.9', 'sgProof' => $proof]);
+        $this->assertNotNull($crossIp);
+        $this->assertEquals(307, $crossIp['status']);
     }
 
     public function test_challenge_page_served(): void

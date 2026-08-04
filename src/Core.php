@@ -120,7 +120,7 @@ class Core
                 $validProof = $proof !== '' && $this->pow->isValid($proof);
                 $validCookie = !empty($ctx['sgOk']) && $this->pow->isSgOkValid((string)$ctx['sgOk'], $ip, $ua);
                 // Round 16 (R2) : la preuve est SINGLE-USE (par IP) — un rejeu → 307.
-                $proofFresh = $validProof ? $this->consumeProof($proof, $ip) : false;
+                $proofFresh = $validProof ? $this->consumeProof($proof) : false;
                 if (!$validCookie && !$proofFresh) {
                     if (!$this->allowChallenge($ip)) {
                         $locale = LocaleResolver::resolve($this->config->locale, $ctx['acceptLanguage'] ?? null);
@@ -309,12 +309,11 @@ class Core
         return true;
     }
 
-    /** Preuve PoW single-use (par IP) — entrées purgées après POW_TTL_MS. */
-    private function consumeProof(string $proof, string $ip): bool
+    /** Preuve PoW single-use GLOBAL (round 17) — clé = preuve seule (nonce aléatoire unique) → rejeu depuis n'importe quel IP → 307. Entrées purgées après POW_TTL_MS. */
+    private function consumeProof(string $proof): bool
     {
-        $key = $ip . ':' . $proof;
-        if (isset($this->usedProofs[$key])) return false;
-        $this->usedProofs[$key] = time();
+        if (isset($this->usedProofs[$proof])) return false;
+        $this->usedProofs[$proof] = time();
         if (count($this->usedProofs) > 5000) {
             $now = time();
             $this->usedProofs = array_filter($this->usedProofs, fn($t) => $now - $t <= (self::POW_TTL_MS / 1000));
