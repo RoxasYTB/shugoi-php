@@ -127,6 +127,7 @@ class MiddlewareTest extends TestCase
         $middleware = $this->createMiddleware();
         $request = new ServerRequest('GET', '/');
         $request = $request->withHeader('User-Agent', 'curl/7.68');
+        $request = $request->withHeader('Cookie', '__sg_ok=' . (new Pow(new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10])))->sgOkValue());
         $handler = $this->createMock(RequestHandlerInterface::class);
         $handler->expects($this->never())->method('handle');
         $response = $middleware->process($request, $handler);

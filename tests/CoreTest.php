@@ -38,6 +38,15 @@ class CoreTest extends TestCase
         return new Core($config, $api, new Pow($config), $configCache);
     }
 
+    private function makeConfig(array $overrides = []): Config
+    {
+        return new Config(array_merge([
+            'siteKey' => 'sg_sk_test_abc',
+            'secret' => 'test_secret',
+            'powDifficulty' => 10,
+        ], $overrides));
+    }
+
     private function solvePow(Config $config, int $difficulty): string
     {
         $ts = time();
@@ -79,6 +88,7 @@ class CoreTest extends TestCase
             'path' => '/some-page',
             'ua' => 'curl/7.68',
             'ip' => '1.2.3.4',
+            'sgOk' => (new Pow($this->makeConfig(['powDifficulty' => 10])))->sgOkValue(),
         ]);
         $this->assertNotNull($result);
         $this->assertTrue($result['block']);
@@ -93,6 +103,7 @@ class CoreTest extends TestCase
             'path' => '/',
             'ua' => 'Slurp/1.0 (+http://www.yahoo.net/slurp)',
             'ip' => '1.2.3.4',
+            'sgOk' => (new Pow($this->makeConfig(['powDifficulty' => 10])))->sgOkValue(),
         ]);
         $this->assertNull($result);
     }
@@ -232,6 +243,7 @@ class CoreTest extends TestCase
             'ua' => 'TestApp/1.0',
             'ip' => '1.2.3.4',
             'sgAuthorized' => (new Pow($config))->sgAuthorizedValue(),
+            'sgOk' => (new Pow($config))->sgOkValue(),
         ]);
         $this->assertNull($result);
     }
@@ -271,7 +283,7 @@ class CoreTest extends TestCase
         $api = new ApiClient($config, $http);
         $core = new Core($config, $api, new Pow($config), new ConfigCache($api));
 
-        $result = $core->evaluate(['path' => '/x', 'ua' => '', 'ip' => '1.2.3.4', 'acceptLanguage' => 'en']);
+        $result = $core->evaluate(['path' => '/x', 'ua' => '', 'ip' => '1.2.3.4', 'acceptLanguage' => 'en', 'sgOk' => (new Pow($config))->sgOkValue()]);
         $this->assertNotNull($result);
         $this->assertEquals(429, $result['status']);
         $this->assertStringContainsString('CUSTOM:rate_limit:90', $result['body']);
@@ -288,7 +300,7 @@ class CoreTest extends TestCase
         $api = new ApiClient($config, $http);
         $core = new Core($config, $api, new Pow($config), new ConfigCache($api));
 
-        $result = $core->evaluate(['path' => '/x', 'ua' => '', 'ip' => '1.2.3.4', 'acceptLanguage' => 'en']);
+        $result = $core->evaluate(['path' => '/x', 'ua' => '', 'ip' => '1.2.3.4', 'acceptLanguage' => 'en', 'sgOk' => (new Pow($config))->sgOkValue()]);
         $this->assertNull($result);
     }
 
@@ -303,7 +315,7 @@ class CoreTest extends TestCase
         $api = new ApiClient($config, $http);
         $core = new Core($config, $api, new Pow($config), new ConfigCache($api));
 
-        $result = $core->evaluate(['path' => '/x', 'ua' => 'curl/7.68', 'ip' => '1.2.3.4']);
+        $result = $core->evaluate(['path' => '/x', 'ua' => 'curl/7.68', 'ip' => '1.2.3.4', 'sgOk' => (new Pow($config))->sgOkValue()]);
         $this->assertNull($result);
     }
 
@@ -322,7 +334,7 @@ class CoreTest extends TestCase
         $api = new ApiClient($config, $http);
         $core = new Core($config, $api, new Pow($config), new ConfigCache($api));
 
-        $result = $core->evaluate(['path' => '/x', 'ua' => 'curl/7.68', 'ip' => '1.2.3.4']);
+        $result = $core->evaluate(['path' => '/x', 'ua' => 'curl/7.68', 'ip' => '1.2.3.4', 'sgOk' => (new Pow($config))->sgOkValue()]);
         $this->assertEquals(403, $result['status']);
         $event = null;
         foreach ($history as $h) {

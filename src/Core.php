@@ -115,7 +115,7 @@ class Core
         // Pre-flight PoW challenge (anti-curl/view-source). S'applique aux navigateurs
         // (UA Mozilla) sans preuve valide ni cookie __sg_ok (HMAC serveur, 30 j).
         if (!str_contains($path, '/__shugoi/') && !str_starts_with($path, '/api/')) {
-            if (preg_match('/Mozilla/i', $ua) && $this->pow->secret() !== '') {
+            if ($this->pow->secret() !== '') {
                 $proof = (string)($ctx['sgProof'] ?? '');
                 $validProof = $proof !== '' && $this->pow->isValid($proof);
                 $validCookie = !empty($ctx['sgOk']) && $this->pow->isSgOkValid((string)$ctx['sgOk']);
