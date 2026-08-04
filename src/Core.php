@@ -210,7 +210,7 @@ class Core
         if (!$this->isWhitelistedBot($ua)) return false;
         if ($this->botVerifier === null) return true;
         $verified = $this->botVerifier->verify($ua, $ip);
-        return $verified === null ? true : $verified;
+        return $verified === null ? false : $verified;
     }
 
     /** Page challenge (tableau en commentaire + JS PoW inline, comptage de bits corrigé). */
