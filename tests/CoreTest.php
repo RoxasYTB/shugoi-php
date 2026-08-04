@@ -7,6 +7,7 @@ use Shugoi\Core;
 use Shugoi\Config;
 use Shugoi\ApiClient;
 use Shugoi\ConfigCache;
+use Shugoi\Pow;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
@@ -19,9 +20,11 @@ class CoreTest extends TestCase
         $config = new Config(array_merge([
             'siteKey' => 'sg_sk_test_abc',
             'secret' => 'test_secret',
+            'powDifficulty' => 10,
         ], $configOverrides));
         if (!$mock) {
             $mock = new MockHandler([
+                new Response(200, [], json_encode(['valid' => true])),
                 new Response(200, [], json_encode([
                     'whitelistedMachines' => [],
                     'detectionFlags' => [],
@@ -32,7 +35,22 @@ class CoreTest extends TestCase
         $http = new Client(['handler' => HandlerStack::create($mock)]);
         $api = new ApiClient($config, $http);
         $configCache = new ConfigCache($api);
-        return new Core($config, $api, $configCache);
+        return new Core($config, $api, new Pow($config), $configCache);
+    }
+
+    private function solvePow(Config $config, int $difficulty): string
+    {
+        $ts = time();
+        $salt = hash_hmac('sha256', (string)$ts, $config->getSigningSecret());
+        $n = 0;
+        $pow = new Pow($config);
+        while (true) {
+            $digest = hash('sha256', $salt . ':' . dechex($n));
+            if ($pow->leadingZeroBits($digest) >= $difficulty) {
+                return $ts . ':' . dechex($n);
+            }
+            $n++;
+        }
     }
 
     public function test_allowlisted_path_returns_null(): void
@@ -44,6 +62,14 @@ class CoreTest extends TestCase
             'ip' => '1.2.3.4',
         ]);
         $this->assertNull($result);
+    }
+
+    public function test_allowlist_is_exact_or_prefix_plus_slash(): void
+    {
+        $core = $this->makeCore();
+        $this->assertNull($core->evaluate(['path' => '/api/test', 'ua' => 'curl/7.68', 'ip' => '1.2.3.4']));
+        // Préfixe-match large interdit (parité Node) : /apiscraper n'est pas allowlisté.
+        $this->assertNotNull($core->evaluate(['path' => '/apiscraper', 'ua' => 'Mozilla/5.0', 'ip' => '1.2.3.4']));
     }
 
     public function test_headless_ua_returns_block(): void
@@ -61,28 +87,30 @@ class CoreTest extends TestCase
 
     public function test_whitelisted_bot_not_blocked(): void
     {
-        $core = $this->makeCore();
+        $core = $this->makeCore(['verifyBots' => false]);
+        // Slurp (UA non-Mozilla) : pas de PoW, exempté du blocage headless.
         $result = $core->evaluate([
             'path' => '/',
-            'ua' => 'Mozilla/5.0 Googlebot/2.1',
+            'ua' => 'Slurp/1.0 (+http://www.yahoo.net/slurp)',
             'ip' => '1.2.3.4',
         ]);
         $this->assertNull($result);
     }
 
-    public function test_normal_browser_with_missing_headers_returns_block(): void
+    public function test_mozilla_whitelisted_bot_is_challenged_like_npm(): void
     {
-        $core = $this->makeCore();
+        // Parité module Node : un UA Mozilla (ex. Googlebot) passe par le pre-flight PoW.
+        $core = $this->makeCore(['verifyBots' => false]);
         $result = $core->evaluate([
             'path' => '/',
-            'ua' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120',
+            'ua' => 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
             'ip' => '1.2.3.4',
         ]);
         $this->assertNotNull($result);
-        $this->assertTrue($result['block']);
+        $this->assertEquals(307, $result['status']);
     }
 
-    public function test_normal_browser_with_headers_passes(): void
+    public function test_browser_without_proof_gets_307_challenge(): void
     {
         $core = $this->makeCore();
         $result = $core->evaluate([
@@ -93,6 +121,118 @@ class CoreTest extends TestCase
             'secFetchDest' => 'document',
             'secFetchMode' => 'navigate',
         ]);
+        $this->assertNotNull($result);
+        $this->assertEquals(307, $result['status']);
+        $this->assertStringContainsString('/__sg_challenge', $result['headers']['Location']);
+    }
+
+    public function test_browser_with_valid_proof_passes(): void
+    {
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $mock = new MockHandler([
+            new Response(200, [], json_encode(['valid' => true])),
+            new Response(200, [], json_encode(['whitelistedMachines' => [], 'detectionFlags' => [], 'skipPaths' => []])),
+        ]);
+        $http = new Client(['handler' => HandlerStack::create($mock)]);
+        $api = new ApiClient($config, $http);
+        $configCache = new ConfigCache($api);
+        $core = new Core($config, $api, new Pow($config), $configCache);
+
+        $proof = $this->solvePow($config, 10);
+        $result = $core->evaluate([
+            'path' => '/',
+            'ua' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120',
+            'ip' => '1.2.3.4',
+            'acceptLanguage' => 'en-US',
+            'secFetchDest' => 'document',
+            'secFetchMode' => 'navigate',
+            'sgProof' => $proof,
+        ]);
+        $this->assertNull($result);
+    }
+
+    public function test_sg_ok_cookie_skips_preflight(): void
+    {
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $mock = new MockHandler([
+            new Response(200, [], json_encode(['valid' => true])),
+            new Response(200, [], json_encode(['whitelistedMachines' => [], 'detectionFlags' => [], 'skipPaths' => []])),
+        ]);
+        $http = new Client(['handler' => HandlerStack::create($mock)]);
+        $api = new ApiClient($config, $http);
+        $core = new Core($config, $api, new Pow($config));
+
+        $sgOk = (new Pow($config))->sgOkValue();
+        $result = $core->evaluate([
+            'path' => '/',
+            'ua' => 'Mozilla/5.0 Chrome/120',
+            'ip' => '1.2.3.4',
+            'sgOk' => $sgOk,
+        ]);
+        $this->assertNull($result);
+    }
+
+    public function test_proof_is_single_use(): void
+    {
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $mock = new MockHandler([
+            new Response(200, [], json_encode(['valid' => true])),
+            new Response(200, [], json_encode(['whitelistedMachines' => [], 'detectionFlags' => [], 'skipPaths' => []])),
+        ]);
+        $http = new Client(['handler' => HandlerStack::create($mock)]);
+        $api = new ApiClient($config, $http);
+        $core = new Core($config, $api, new Pow($config), new ConfigCache($api));
+
+        $proof = $this->solvePow($config, 10);
+        $ctx = ['path' => '/', 'ua' => 'Mozilla/5.0 Chrome/120', 'ip' => '1.2.3.4', 'sgProof' => $proof];
+        $this->assertNull($core->evaluate($ctx));
+        // Rejeu de la même preuve (même IP) → 307 challenge.
+        $second = $core->evaluate($ctx);
+        $this->assertNotNull($second);
+        $this->assertEquals(307, $second['status']);
+    }
+
+    public function test_challenge_page_served(): void
+    {
+        $core = $this->makeCore();
+        $result = $core->evaluate([
+            'path' => '/__sg_challenge',
+            'ua' => 'Mozilla/5.0 Chrome/120',
+            'ip' => '1.2.3.4',
+        ]);
+        $this->assertEquals(200, $result['status']);
+        $this->assertStringContainsString('crypto.subtle', $result['body']);
+        $this->assertStringContainsString('(b&8)?0:(b&4)?1:(b&2)?2:3', $result['body']);
+    }
+
+    public function test_assets_blocked_without_authorized_cookie(): void
+    {
+        $core = $this->makeCore();
+        $result = $core->evaluate([
+            'path' => '/assets/app.js',
+            'ua' => 'TestApp/1.0',
+            'ip' => '1.2.3.4',
+        ]);
+        $this->assertNotNull($result);
+        $this->assertEquals(403, $result['status']);
+    }
+
+    public function test_assets_served_with_authorized_cookie(): void
+    {
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $mock = new MockHandler([
+            new Response(200, [], json_encode(['valid' => true])),
+            new Response(200, [], json_encode(['whitelistedMachines' => [], 'detectionFlags' => [], 'skipPaths' => []])),
+        ]);
+        $http = new Client(['handler' => HandlerStack::create($mock)]);
+        $api = new ApiClient($config, $http);
+        $core = new Core($config, $api, new Pow($config), new ConfigCache($api));
+        $result = $core->evaluate([
+            'path' => '/assets/app.js',
+            'ua' => 'TestApp/1.0',
+            'ip' => '1.2.3.4',
+            'sgAuthorized' => (new Pow($config))->sgAuthorizedValue(),
+        ]);
         $this->assertNull($result);
     }
 
@@ -102,6 +242,7 @@ class CoreTest extends TestCase
         $this->assertTrue($core->isAllowlisted('/api/test'));
         $this->assertTrue($core->isAllowlisted('/legal'));
         $this->assertFalse($core->isAllowlisted('/'));
+        $this->assertFalse($core->isAllowlisted('/apiscraper'));
     }
 
     public function test_isWhitelistedBot(): void

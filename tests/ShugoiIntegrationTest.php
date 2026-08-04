@@ -13,6 +13,7 @@ use Shugoi\GuardInjector;
 use Shugoi\CspBuilder;
 use Shugoi\HtmlStore;
 use Shugoi\TokenSigner;
+use Shugoi\Pow;
 use Psr\Http\Server\RequestHandlerInterface;
 use Nyholm\Psr7\ServerRequest;
 use Nyholm\Psr7\Response as Psr7Response;
@@ -23,15 +24,22 @@ use GuzzleHttp\Client;
 
 class ShugoiIntegrationTest extends TestCase
 {
-    private function createFullStack(): Middleware
+    private function createFullStack(int $responses = 4): Middleware
     {
         $config = new Config([
             'siteKey' => 'sg_sk_test_abc',
             'secret' => 'test_secret',
+            'powDifficulty' => 10,
         ]);
-        $mockHandler = new MockHandler([
-            new Response(200, [], json_encode(['whitelistedMachines' => [], 'detectionFlags' => [], 'skipPaths' => []])),
-        ]);
+        $queue = [];
+        $whitelist = ['whitelistedMachines' => [], 'detectionFlags' => [], 'skipPaths' => []];
+        // validate-key, whitelist, guard-detect, guard…
+        $queue[] = new Response(200, [], json_encode(['valid' => true]));
+        $queue[] = new Response(200, [], json_encode($whitelist));
+        while (count($queue) < $responses) {
+            $queue[] = new Response(200, [], count($queue) % 2 === 0 ? 'console.log("detect");' : json_encode($whitelist));
+        }
+        $mockHandler = new MockHandler($queue);
         $http = new Client(['handler' => HandlerStack::create($mockHandler)]);
         $api = new ApiClient($config, $http);
         $configCache = new ConfigCache($api);
@@ -39,15 +47,32 @@ class ShugoiIntegrationTest extends TestCase
         $htmlStore = new HtmlStore();
         $tokenSigner = new TokenSigner($config);
         $cspBuilder = new CspBuilder($config);
-        $core = new Core($config, $api, $configCache);
+        $core = new Core($config, $api, new Pow($config), $configCache);
         $injector = new GuardInjector($config, $tokenSigner, $htmlStore, $guardCache, $configCache);
-        return new Middleware($config, $core, $api, $configCache, $guardCache, $htmlStore, $cspBuilder, $injector, $tokenSigner);
+        return new Middleware($config, $core, $api, $configCache, $guardCache, $htmlStore, $cspBuilder, $injector, $tokenSigner, new Pow($config));
+    }
+
+    private function solvePow(Config $config, int $difficulty): string
+    {
+        $ts = time();
+        $salt = hash_hmac('sha256', (string)$ts, $config->getSigningSecret());
+        $n = 0;
+        $pow = new Pow($config);
+        while (true) {
+            $digest = hash('sha256', $salt . ':' . dechex($n));
+            if ($pow->leadingZeroBits($digest) >= $difficulty) {
+                return $ts . ':' . dechex($n);
+            }
+            $n++;
+        }
     }
 
     public function test_full_flow_browser_passes(): void
     {
         $middleware = $this->createFullStack();
-        $request = new ServerRequest('GET', '/');
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $proof = $this->solvePow($config, 10);
+        $request = new ServerRequest('GET', '/?sg_proof=' . urlencode($proof));
         $request = $request
             ->withHeader('User-Agent', 'Mozilla/5.0 Chrome/120')
             ->withHeader('Accept-Language', 'en-US')
@@ -58,16 +83,87 @@ class ShugoiIntegrationTest extends TestCase
         $response = $middleware->process($request, $handler);
         $this->assertEquals(200, $response->getStatusCode());
         $this->assertStringContainsString('default-src', $response->getHeaderLine('Content-Security-Policy'));
+        $this->assertStringContainsString('eval([...', (string)$response->getBody());
     }
 
     public function test_full_flow_curl_blocked(): void
     {
-        $middleware = $this->createFullStack();
+        $middleware = $this->createFullStack(2);
         $request = new ServerRequest('GET', '/');
         $request = $request->withHeader('User-Agent', 'curl/7.68');
         $handler = $this->createMock(RequestHandlerInterface::class);
         $handler->expects($this->never())->method('handle');
         $response = $middleware->process($request, $handler);
         $this->assertEquals(403, $response->getStatusCode());
+    }
+
+    public function test_full_flow_render_with_grant_serves_html_with_notice(): void
+    {
+        $middleware = $this->createFullStack();
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $proof = $this->solvePow($config, 10);
+
+        // 1. Navigation → skeleton + token stocké.
+        $request = new ServerRequest('GET', '/?sg_proof=' . urlencode($proof));
+        $request = $request->withHeader('User-Agent', 'Mozilla/5.0 Chrome/120');
+        $handler = $this->createMock(RequestHandlerInterface::class);
+        $handler->method('handle')->willReturn(new Psr7Response(200, ['Content-Type' => 'text/html'], '<html><head></head><body>Hello</body></html>'));
+        $response = $middleware->process($request, $handler);
+        $this->assertEquals(200, $response->getStatusCode());
+        $skeleton = (string)$response->getBody();
+
+        // Extraction du token depuis le bootcode encodé.
+        preg_match("/'([^']+)'/", $skeleton, $mm);
+        $this->assertNotEmpty($mm[1]);
+        $decoded = '';
+        $len = mb_strlen($mm[1], 'UTF-8');
+        for ($i = 0; $i < $len; $i++) {
+            $cp = mb_ord(mb_substr($mm[1], $i, 1, 'UTF-8'), 'UTF-8');
+            $decoded .= chr($cp - 917504);
+        }
+        preg_match('/window\.__sg_token="([^"]+)"/', $decoded, $tm);
+        $token = $tm[1] ?? null;
+        $this->assertNotNull($token);
+
+        // 2. Render avec grant valide.
+        $mid = str_repeat('a', 64);
+        $ts = time();
+        $ts36 = base_convert((string)$ts, 10, 36);
+        $sig = hash_hmac('sha256', 'render-grant:sg_sk_test_abc:' . $mid . ':' . $token . ':127.0.0.1:' . $ts36, 'test_secret');
+        $grant = $ts36 . ':' . $sig;
+
+        $render = new ServerRequest('GET', '/__shugoi/render?token=' . urlencode($token) . '&mid=' . $mid . '&grant=' . urlencode($grant), [], null, '1.1', ['REMOTE_ADDR' => '127.0.0.1']);
+        $renderHandler = $this->createMock(RequestHandlerInterface::class);
+        $response = $middleware->process($render, $renderHandler);
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertEquals('strict-origin-when-cross-origin', $response->getHeaderLine('Referrer-Policy'));
+        $this->assertStringContainsString('no-store', $response->getHeaderLine('Cache-Control'));
+        $this->assertStringContainsString('__sg_authorized=', $response->getHeaderLine('Set-Cookie'));
+        $data = json_decode((string)$response->getBody(), true);
+        $this->assertArrayHasKey('html', $data);
+        $this->assertStringContainsString('Hello', $data['html']);
+        // Notice injectée (base URL + overlay) + referrer meta.
+        $this->assertStringContainsString('__sg_o', $data['html']);
+        $this->assertStringContainsString('name="referrer" content="strict-origin-when-cross-origin"', $data['html']);
+    }
+
+    public function test_render_without_grant_is_not_found(): void
+    {
+        $middleware = $this->createFullStack();
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $proof = $this->solvePow($config, 10);
+        $request = new ServerRequest('GET', '/?sg_proof=' . urlencode($proof));
+        $request = $request->withHeader('User-Agent', 'Mozilla/5.0 Chrome/120');
+        $handler = $this->createMock(RequestHandlerInterface::class);
+        $handler->method('handle')->willReturn(new Psr7Response(200, ['Content-Type' => 'text/html'], '<html><body>Hello</body></html>'));
+        $middleware->process($request, $handler);
+
+        $render = new ServerRequest('GET', '/__shugoi/render?token=abcdef1234567890abcdef');
+        $renderHandler = $this->createMock(RequestHandlerInterface::class);
+        $response = $middleware->process($render, $renderHandler);
+        $this->assertEquals(200, $response->getStatusCode());
+        $data = json_decode((string)$response->getBody(), true);
+        $this->assertEquals('not_found', $data['error']);
+        $this->assertEquals('', $response->getHeaderLine('Set-Cookie'));
     }
 }

@@ -3,6 +3,10 @@ namespace Shugoi;
 
 class TokenSigner
 {
+    /** Parité module Node (render.ts) : TTL du render-grant réduit à 60 s (audit 2026-08-03). */
+    public const GRANT_TTL_MS = 60_000;
+    public const TOKEN_TTL_MS = 120_000;
+
     public function __construct(
         private readonly Config $config
     ) {}
@@ -31,5 +35,55 @@ class TokenSigner
             'nonce' => $nonce,
             'sig' => $sig,
         ];
+    }
+
+    /** Secret HMAC effectif, ou '' si aucun secret configuré. */
+    public function secret(): string
+    {
+        try {
+            return $this->config->getSigningSecret();
+        } catch (\RuntimeException) {
+            return '';
+        }
+    }
+
+    /**
+     * Vérifie un render-grant émis par le wlc serveur (anti-bypass "token-only").
+     * Format : base36(timestamp) + ":" + HMAC(secret, "render-grant:siteKey:mid:token:ip:ts").
+     * Lié au token + IP + siteKey + TTL 60 s.
+     */
+    public function verifyRenderGrant(
+        ?string $mid,
+        ?string $grant,
+        string $token = '',
+        string $ip = '',
+        ?string $expectedSiteKey = null
+    ): bool {
+        try {
+            $secret = $this->config->getSigningSecret();
+        } catch (\RuntimeException) {
+            return true; // fail-safe : pas de secret configuré → pas de vérification
+        }
+        if ($secret === '') return true;
+        if ($grant === null || $grant === '' || $mid === null || $mid === '') return false;
+        if (!preg_match('/^[a-f0-9]{64}$/', $mid)) return false;
+
+        $sep = strpos($grant, ':');
+        if ($sep < 0) return false;
+        $ts = substr($grant, 0, $sep);
+        $sig = substr($grant, $sep + 1);
+        $tsSec = (int)base_convert($ts, 36, 10);
+        if ($tsSec <= 0) return false;
+        if (($this->nowMs() - $tsSec * 1000) > self::GRANT_TTL_MS) return false;
+        if ($expectedSiteKey === null || $expectedSiteKey === '') return false;
+
+        $payload = 'render-grant:' . implode(':', [$expectedSiteKey, $mid, $token, $ip, $ts]);
+        $expected = hash_hmac('sha256', $payload, $secret);
+        return hash_equals($expected, $sig);
+    }
+
+    private function nowMs(): int
+    {
+        return (int)(microtime(true) * 1000);
     }
 }

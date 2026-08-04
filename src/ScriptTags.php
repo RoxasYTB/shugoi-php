@@ -15,17 +15,29 @@ class ScriptTags
     {
         $locale = $locale ?? $this->config->locale ?? 'en';
         $guards = $this->guardCache->get();
-        $whitelistConfig = $this->configCache->get();
+        $whitelistConfig = $this->configCache->get($this->config->internalUrl);
+        $whitelistConfig['powDifficulty'] = $this->config->powDifficulty;
         $ts = (int)(microtime(true) * 1000);
         $token = $this->tokenSigner->sign($ts);
 
         $skeletonGen = $this->skeletonGenerator ?? new SkeletonGenerator($this->tokenSigner);
-        $skeleton = $skeletonGen->generate($token, $guards, $whitelistConfig, $this->config->restrictedAccess, $locale, $this->config->baseUrl);
+        $skeleton = $skeletonGen->generate(
+            $token,
+            $guards,
+            $whitelistConfig,
+            $this->config->restrictedAccess,
+            $locale,
+            $this->config->baseUrl,
+            './__shugoi/render',
+            $this->config->siteKey
+        );
 
+        // Parité scripts.ts du module Node : guardDetect = skeleton, guard vide,
+        // whitelistConfig vide (fusionnée dans le skeleton via __sg_config).
         return [
             'guardDetect' => $skeleton,
             'guard' => '',
-            'whitelistConfig' => $this->config->restrictedAccess ? '<script>window.__sg_disableRestrictedAccess=true;</script>' : '',
+            'whitelistConfig' => '',
             'token' => $token,
         ];
     }

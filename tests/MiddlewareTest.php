@@ -13,6 +13,7 @@ use Shugoi\GuardInjector;
 use Shugoi\CspBuilder;
 use Shugoi\HtmlStore;
 use Shugoi\TokenSigner;
+use Shugoi\Pow;
 use Psr\Http\Server\RequestHandlerInterface;
 use Nyholm\Psr7\ServerRequest;
 use Nyholm\Psr7\Response as Psr7Response;
@@ -23,20 +24,31 @@ use GuzzleHttp\Client;
 
 class MiddlewareTest extends TestCase
 {
-    private function createMiddleware(array $configOverrides = []): Middleware
+    private function createMiddleware(array $configOverrides = [], int $queueSize = 2): Middleware
     {
         $config = new Config(array_merge([
             'siteKey' => 'sg_sk_test_abc',
             'secret' => 'test_secret',
+            'powDifficulty' => 10,
         ], $configOverrides));
 
-        $mockHandler = new MockHandler([
-            new Response(200, [], json_encode([
+        $responses = [];
+        // validate-key
+        $responses[] = new Response(200, [], json_encode(['valid' => true]));
+        // whitelist
+        $responses[] = new Response(200, [], json_encode([
+            'whitelistedMachines' => [],
+            'detectionFlags' => [],
+            'skipPaths' => [],
+        ]));
+        while (count($responses) < $queueSize) {
+            $responses[] = new Response(200, [], json_encode([
                 'whitelistedMachines' => [],
                 'detectionFlags' => [],
                 'skipPaths' => [],
-            ])),
-        ]);
+            ]));
+        }
+        $mockHandler = new MockHandler($responses);
         $http = new Client(['handler' => HandlerStack::create($mockHandler)]);
         $api = new ApiClient($config, $http);
         $configCache = new ConfigCache($api);
@@ -44,7 +56,7 @@ class MiddlewareTest extends TestCase
         $htmlStore = new HtmlStore();
         $tokenSigner = new TokenSigner($config);
         $cspBuilder = new CspBuilder($config);
-        $core = new Core($config, $api, $configCache);
+        $core = new Core($config, $api, new Pow($config), $configCache);
         $injector = new GuardInjector($config, $tokenSigner, $htmlStore, $guardCache, $configCache);
 
         return new Middleware(
@@ -57,7 +69,23 @@ class MiddlewareTest extends TestCase
             cspBuilder: $cspBuilder,
             injector: $injector,
             tokenSigner: $tokenSigner,
+            pow: new Pow($config),
         );
+    }
+
+    private function solvePow(Config $config, int $difficulty): string
+    {
+        $ts = time();
+        $salt = hash_hmac('sha256', (string)$ts, $config->getSigningSecret());
+        $n = 0;
+        $pow = new Pow($config);
+        while (true) {
+            $digest = hash('sha256', $salt . ':' . dechex($n));
+            if ($pow->leadingZeroBits($digest) >= $difficulty) {
+                return $ts . ':' . dechex($n);
+            }
+            $n++;
+        }
     }
 
     public function test_render_endpoint_returns_json(): void
@@ -68,7 +96,19 @@ class MiddlewareTest extends TestCase
         $response = $middleware->process($request, $handler);
         $body = json_decode((string)$response->getBody(), true);
         $this->assertArrayHasKey('error', $body);
-        $this->assertEquals(404, $response->getStatusCode());
+        // Parité module Node : le render répond 200 avec { error: "not_found" }.
+        $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    public function test_render_endpoint_rejects_post_405(): void
+    {
+        $middleware = $this->createMiddleware();
+        $request = new ServerRequest('POST', '/__shugoi/render');
+        $handler = $this->createMock(RequestHandlerInterface::class);
+        $response = $middleware->process($request, $handler);
+        $this->assertEquals(405, $response->getStatusCode());
+        $body = json_decode((string)$response->getBody(), true);
+        $this->assertEquals('method_not_allowed', $body['error']);
     }
 
     public function test_allowlisted_path_passes_through(): void
@@ -93,6 +133,36 @@ class MiddlewareTest extends TestCase
         $this->assertStringContainsString('Shugoi', (string)$response->getBody());
     }
 
+    public function test_browser_gets_307_challenge_without_proof(): void
+    {
+        $middleware = $this->createMiddleware();
+        $request = new ServerRequest('GET', '/');
+        $request = $request->withHeader('User-Agent', 'Mozilla/5.0 Chrome/120');
+        $handler = $this->createMock(RequestHandlerInterface::class);
+        $handler->expects($this->never())->method('handle');
+        $response = $middleware->process($request, $handler);
+        $this->assertEquals(307, $response->getStatusCode());
+        $this->assertStringContainsString('/__sg_challenge', $response->getHeaderLine('Location'));
+    }
+
+    public function test_browser_with_proof_passes_and_gets_ok_cookie(): void
+    {
+        $middleware = $this->createMiddleware([], 5);
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $proof = $this->solvePow($config, 10);
+        $request = new ServerRequest('GET', '/?sg_proof=' . urlencode($proof));
+        $request = $request
+            ->withHeader('User-Agent', 'Mozilla/5.0 Chrome/120')
+            ->withHeader('Accept-Language', 'en-US')
+            ->withHeader('Sec-Fetch-Dest', 'document')
+            ->withHeader('Sec-Fetch-Mode', 'navigate');
+        $handler = $this->createMock(RequestHandlerInterface::class);
+        $handler->method('handle')->willReturn(new Psr7Response(200, ['Content-Type' => 'text/html'], '<html><body>Hello</body></html>'));
+        $response = $middleware->process($request, $handler);
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertStringContainsString('__sg_ok=', $response->getHeaderLine('Set-Cookie'));
+    }
+
     public function test_csp_header_is_set(): void
     {
         $middleware = $this->createMiddleware();
@@ -101,5 +171,17 @@ class MiddlewareTest extends TestCase
         $handler->method('handle')->willReturn(new Psr7Response(200, [], ''));
         $response = $middleware->process($request, $handler);
         $this->assertStringContainsString("default-src 'self'", $response->getHeaderLine('Content-Security-Policy'));
+    }
+
+    public function test_csp_merges_with_existing_header(): void
+    {
+        $middleware = $this->createMiddleware();
+        $request = new ServerRequest('GET', '/api/test');
+        $handler = $this->createMock(RequestHandlerInterface::class);
+        $handler->method('handle')->willReturn(new Psr7Response(200, ['Content-Security-Policy' => "default-src 'self'; frame-ancestors 'none'"], ''));
+        $response = $middleware->process($request, $handler);
+        $csp = $response->getHeaderLine('Content-Security-Policy');
+        // 'none' reste SEUL dans frame-ancestors (spec CSP, parité csp.ts).
+        $this->assertMatchesRegularExpression('/frame-ancestors \'none\'/', $csp);
     }
 }

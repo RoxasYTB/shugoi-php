@@ -19,4 +19,7 @@ return [
     'splitRender' => true,
     'multiProcess' => false,
     'verifyBots' => true,
+    'powDifficulty' => (int) env('SHUGOI_POW_DIFFICULTY', 14),
+    'powTtlMs' => 60000,
+    'powOkTtlMs' => 2592000000,
 ];

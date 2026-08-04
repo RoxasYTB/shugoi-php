@@ -59,6 +59,9 @@ class Config
     public readonly bool $splitRender;
     public readonly bool $multiProcess;
     public readonly bool $verifyBots;
+    public readonly int $powDifficulty;
+    public readonly int $powTtlMs;
+    public readonly int $powOkTtlMs;
 
     public function __construct(array $options = [])
     {
@@ -84,6 +87,10 @@ class Config
         $this->splitRender = $options['splitRender'] ?? true;
         $this->multiProcess = $options['multiProcess'] ?? false;
         $this->verifyBots = $options['verifyBots'] ?? true;
+        // Parité module Node : difficulté PoW 14 par défaut, TTL 60 s, cookie __sg_ok 30 j.
+        $this->powDifficulty = $options['powDifficulty'] ?? 14;
+        $this->powTtlMs = $options['powTtlMs'] ?? 60_000;
+        $this->powOkTtlMs = $options['powOkTtlMs'] ?? 30 * 24 * 3600 * 1000;
     }
 
     public function getSigningSecret(): string

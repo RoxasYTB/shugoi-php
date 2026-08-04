@@ -1,6 +1,7 @@
 {
     "name": "shugoi/shugoi-php",
     "description": "Shugoi anti-abuse protection — PHP/Laravel middleware",
+    "version": "0.3.0",
     "type": "library",
     "license": "MIT",
     "require": {

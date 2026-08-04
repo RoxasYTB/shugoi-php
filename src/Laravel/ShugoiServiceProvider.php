@@ -13,6 +13,7 @@ use Shugoi\GuardInjector;
 use Shugoi\TokenSigner;
 use Shugoi\SkeletonGenerator;
 use Shugoi\BotVerifier;
+use Shugoi\Pow;
 use Shugoi\Middleware;
 use Shugoi\ScriptTags;
 use Shugoi\Laravel\Commands\ShugoiSetupCommand;
@@ -30,6 +31,7 @@ class ShugoiServiceProvider extends ServiceProvider
         $this->app->singleton(GuardCache::class, fn($app) => new GuardCache($app->make(ApiClient::class)));
         $this->app->singleton(HtmlStore::class, fn($app) => new HtmlStore($app->make(Config::class)->multiProcess));
         $this->app->singleton(TokenSigner::class, fn($app) => new TokenSigner($app->make(Config::class)));
+        $this->app->singleton(Pow::class, fn($app) => new Pow($app->make(Config::class)));
         $this->app->singleton(CspBuilder::class, fn($app) => new CspBuilder($app->make(Config::class)));
         $this->app->singleton(SkeletonGenerator::class, fn($app) => new SkeletonGenerator($app->make(TokenSigner::class)));
         $this->app->singleton(Core::class, function ($app) {
@@ -37,7 +39,7 @@ class ShugoiServiceProvider extends ServiceProvider
             $api = $app->make(ApiClient::class);
             $configCache = $app->make(ConfigCache::class);
             $botVerifier = $config->verifyBots ? new BotVerifier() : null;
-            return new Core($config, $api, $configCache, $botVerifier);
+            return new Core($config, $api, $app->make(Pow::class), $configCache, $botVerifier);
         });
         $this->app->singleton(GuardInjector::class, fn($app) => new GuardInjector(
             $app->make(Config::class),
@@ -58,6 +60,7 @@ class ShugoiServiceProvider extends ServiceProvider
                 cspBuilder: $app->make(CspBuilder::class),
                 injector: $app->make(GuardInjector::class),
                 tokenSigner: $app->make(TokenSigner::class),
+                pow: $app->make(Pow::class),
             );
         });
         $this->app->singleton(ScriptTags::class, function ($app) {

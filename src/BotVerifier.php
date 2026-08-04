@@ -37,7 +37,8 @@ class BotVerifier
         return $result;
     }
 
-    private function verifyPtr(string $ip, array $expectedSuffixes): bool
+    // Protégé (et non privé) : testable par les mocks PHPUnit (onlyMethods).
+    protected function verifyPtr(string $ip, array $expectedSuffixes): bool
     {
         $ptr = gethostbyaddr($ip);
         if ($ptr === false || $ptr === $ip) return false;

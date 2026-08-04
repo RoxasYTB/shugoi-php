@@ -28,7 +28,7 @@ class BotVerifierTest extends TestCase
         $cacheProp = $ref->getProperty('cache');
         $cacheProp->setAccessible(true);
         $cacheKey = md5($ua . ':' . $ip);
-        $cacheProp->setValue([$cacheKey => ['result' => true, 'time' => time()]]);
+        $cacheProp->setValue(null, [$cacheKey => ['result' => true, 'time' => time()]]);
 
         $this->assertTrue($verifier->verify($ua, $ip));
     }
@@ -70,7 +70,7 @@ class BotVerifierTest extends TestCase
         $cacheProp = $ref->getProperty('cache');
         $cacheProp->setAccessible(true);
         $cacheKey = md5($ua . ':' . $ip);
-        $cacheProp->setValue([$cacheKey => ['result' => true, 'time' => time() - 7200]]);
+        $cacheProp->setValue(null, [$cacheKey => ['result' => true, 'time' => time() - 7200]]);
 
         $verifier2 = $this->getMockBuilder(BotVerifier::class)
             ->onlyMethods(['verifyPtr'])
