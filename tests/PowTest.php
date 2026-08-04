@@ -19,12 +19,13 @@ class PowTest extends TestCase
     private function solvePow(Pow $pow, int $difficulty): string
     {
         $ts = time();
-        $salt = hash_hmac('sha256', (string)$ts, $pow->secret());
+        $nonce = bin2hex(random_bytes(8));
+        $salt = hash_hmac('sha256', $ts . ':' . $nonce, $pow->secret());
         $n = 0;
         while (true) {
             $digest = hash('sha256', $salt . ':' . dechex($n));
             if ($pow->leadingZeroBits($digest) >= $difficulty) {
-                return $ts . ':' . dechex($n);
+                return $ts . ':' . $nonce . ':' . dechex($n);
             }
             $n++;
         }

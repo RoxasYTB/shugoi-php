@@ -102,7 +102,7 @@ class Middleware implements PsrMiddlewareInterface
 
         // PoW validé → pose le cookie __sg_ok (navigations suivantes sans challenge).
         if (isset($query['sg_proof']) && is_string($query['sg_proof'])) {
-            $okCookie = $this->pow()->sgOkCookie($query['sg_proof']);
+            $okCookie = $this->pow()->sgOkCookie($query['sg_proof'], $ip, $ua);
             if ($okCookie !== null) {
                 $response = $response->withAddedHeader('Set-Cookie', $okCookie);
             }

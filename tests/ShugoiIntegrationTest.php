@@ -56,13 +56,14 @@ class ShugoiIntegrationTest extends TestCase
     private function solvePow(Config $config, int $difficulty): string
     {
         $ts = time();
-        $salt = hash_hmac('sha256', (string)$ts, $config->getSigningSecret());
+        $nonce = bin2hex(random_bytes(8));
+        $salt = hash_hmac('sha256', $ts . ':' . $nonce, $config->getSigningSecret());
         $n = 0;
         $pow = new Pow($config);
         while (true) {
             $digest = hash('sha256', $salt . ':' . dechex($n));
             if ($pow->leadingZeroBits($digest) >= $difficulty) {
-                return $ts . ':' . dechex($n);
+                return $ts . ':' . $nonce . ':' . dechex($n);
             }
             $n++;
         }
@@ -92,7 +93,7 @@ class ShugoiIntegrationTest extends TestCase
         $middleware = $this->createFullStack(2);
         $request = new ServerRequest('GET', '/');
         $request = $request->withHeader('User-Agent', 'curl/7.68');
-        $request = $request->withHeader('Cookie', '__sg_ok=' . (new Pow(new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10])))->sgOkValue());
+        $request = $request->withHeader('Cookie', '__sg_ok=' . (new Pow(new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10])))->sgOkValue('', 'curl/7.68'));
         $handler = $this->createMock(RequestHandlerInterface::class);
         $handler->expects($this->never())->method('handle');
         $response = $middleware->process($request, $handler);

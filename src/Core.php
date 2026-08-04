@@ -118,7 +118,7 @@ class Core
             if ($this->pow->secret() !== '') {
                 $proof = (string)($ctx['sgProof'] ?? '');
                 $validProof = $proof !== '' && $this->pow->isValid($proof);
-                $validCookie = !empty($ctx['sgOk']) && $this->pow->isSgOkValid((string)$ctx['sgOk']);
+                $validCookie = !empty($ctx['sgOk']) && $this->pow->isSgOkValid((string)$ctx['sgOk'], $ip, $ua);
                 // Round 16 (R2) : la preuve est SINGLE-USE (par IP) — un rejeu → 307.
                 $proofFresh = $validProof ? $this->consumeProof($proof, $ip) : false;
                 if (!$validCookie && !$proofFresh) {
@@ -232,7 +232,7 @@ class Core
         }
         $js = '(function(){'
             . 'var P=new URLSearchParams(location.search);'
-            . "var salt=P.get('salt')||'', ts=P.get('ts')||'', diff=parseInt(P.get('diff')||'" . $this->config->powDifficulty . "',10), path=P.get('path')||'/';"
+            . "var salt=P.get('salt')||'', ts=P.get('ts')||'', nonce=P.get('nonce')||'', diff=parseInt(P.get('diff')||'" . $this->config->powDifficulty . "',10), path=P.get('path')||'/';"
             . 'if(path.charAt(0)!==\'/\'||path.charAt(1)===\'/\'||path.indexOf(\'\\\\\')>=0)path=\'/\';'
             . 'var enc=new TextEncoder();'
             . 'function bits(d){var l=0;for(var i=0;i<d.length;i++){var b=parseInt(d[i],16);if(b===0){l+=4;continue}l+=(b&8)?0:(b&4)?1:(b&2)?2:3;break}return l}'
@@ -240,7 +240,7 @@ class Core
             . 'function step(){'
             . "crypto.subtle.digest('SHA-256',enc.encode(salt+':'+n.toString(16))).then(function(buf){"
             . "var h=Array.from(new Uint8Array(buf)).map(function(v){return v.toString(16).padStart(2,'0')}).join('');"
-            . "if(bits(h)>=diff){var base=path;var q=(base.indexOf('?')>=0?'&':'?')+'sg_proof='+ts+':'+n.toString(16);location.replace(base+q)}"
+            . "if(bits(h)>=diff){var base=path;var q=(base.indexOf('?')>=0?'&':'?')+'sg_proof='+ts+':'+nonce+':'+n.toString(16);location.replace(base+q)}"
             . 'else{n++;if(n<300000)step()}'
             . '}).catch(function(){location.reload()});'
             . '}'
@@ -254,13 +254,14 @@ class Core
     private function powChallenge307(array $ctx): array
     {
         $ts = time();
-        $salt = hash_hmac('sha256', (string)$ts, $this->pow->secret());
+        $nonce = bin2hex(random_bytes(8));
+        $salt = hash_hmac('sha256', $ts . ':' . $nonce, $this->pow->secret());
         $prefix = (string)($ctx['forwardedPrefix'] ?? '');
         if ($prefix === '/' || $prefix === '') $prefix = '';
         $prefix = rtrim($prefix, '/');
         $path = $this->safeChallengePath($ctx['path'] ?? '/');
         $chalUrl = $prefix . '/__sg_challenge?ts=' . $ts . '&salt=' . $salt
-            . '&diff=' . $this->config->powDifficulty . '&path=' . rawurlencode($prefix . $path);
+            . '&nonce=' . $nonce . '&diff=' . $this->config->powDifficulty . '&path=' . rawurlencode($prefix . $path);
         return [
             'block' => true,
             'status' => 307,
