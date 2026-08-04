@@ -103,11 +103,11 @@ class ConfigTest extends TestCase
         $this->assertCount(12, $config->headlessPatterns);
     }
 
-    public function testBotWhitelistCountIsFourteen()
+    public function testBotWhitelistCountIsThirteen()
     {
         $config = new Config(['siteKey' => 'test_key']);
 
-        $this->assertCount(14, $config->botWhitelist);
+        $this->assertCount(13, $config->botWhitelist);
     }
 
     public function testExtraDirectivesIsNullByDefaultAndCanBeSet()

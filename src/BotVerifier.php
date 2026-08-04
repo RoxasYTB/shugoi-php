@@ -23,7 +23,7 @@ class BotVerifier
             if (preg_match($bot['pattern'], $ua)) { $match = $bot; break; }
         }
         if ($match === null) return null;
-        if (empty($ip)) return false;
+        if (empty($ip) || $ip === 'unknown') return false;
 
         $cacheKey = md5($ua . ':' . $ip);
         if (isset(self::$cache[$cacheKey])) {

@@ -24,7 +24,11 @@ class Pow
 
     public function secret(): string
     {
-        return $this->config->getSigningSecret();
+        try {
+            return $this->config->getSigningSecret();
+        } catch (\RuntimeException) {
+            return '';
+        }
     }
 
     /** Génère le challenge à injecter (window.__sg_pow). */
@@ -142,7 +146,7 @@ class Pow
 
     private function isProduction(): bool
     {
-        $env = $_SERVER['APP_ENV'] ?? $_SERVER['NODE_ENV'] ?? null;
+        $env = getenv('APP_ENV') ?: ($_SERVER['APP_ENV'] ?? null) ?: ($_SERVER['NODE_ENV'] ?? null) ?: getenv('NODE_ENV');
         return $env === 'production';
     }
 }

@@ -3,7 +3,7 @@ return [
     'siteKey' => env('SHUGOI_SITE_KEY', ''),
     'secret' => env('SHUGOI_SECRET', ''),
     'signingSecret' => env('SHUGOI_SIGNING_SECRET'),
-    'allowlist' => ['/api', '/legal', '/_debugbar', '/telescope', '/horizon', '/nova'],
+    'allowlist' => ['/api', '/legal'],
     'headlessPatterns' => [],
     'botWhitelist' => [],
     'baseUrl' => env('SHUGOI_BASE_URL', 'https://shugoi.com/api/v1'),

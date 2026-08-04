@@ -33,14 +33,15 @@ class MiddlewareTest extends TestCase
         ], $configOverrides));
 
         $responses = [];
-        // validate-key
-        $responses[] = new Response(200, [], json_encode(['valid' => true]));
-        // whitelist
+        // Parité middleware.ts : le check skipPaths (GET /whitelist) est AVANT
+        // core.evaluate (donc avant validate-key).
         $responses[] = new Response(200, [], json_encode([
             'whitelistedMachines' => [],
             'detectionFlags' => [],
             'skipPaths' => [],
         ]));
+        // validate-key
+        $responses[] = new Response(200, [], json_encode(['valid' => true]));
         while (count($responses) < $queueSize) {
             $responses[] = new Response(200, [], json_encode([
                 'whitelistedMachines' => [],
@@ -183,5 +184,34 @@ class MiddlewareTest extends TestCase
         $csp = $response->getHeaderLine('Content-Security-Policy');
         // 'none' reste SEUL dans frame-ancestors (spec CSP, parité csp.ts).
         $this->assertMatchesRegularExpression('/frame-ancestors \'none\'/', $csp);
+    }
+
+    public function test_skip_path_outside_allowlist_passes_without_challenge(): void
+    {
+        // Parité middleware.ts : le check skipPaths est AVANT core.evaluate — un skipPath
+        // hors allowlist (ex. /docs) ne reçoit PAS de challenge PoW.
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $mock = new MockHandler([
+            new Response(200, [], json_encode(['whitelistedMachines' => [], 'detectionFlags' => [], 'skipPaths' => ['/docs']])),
+            new Response(200, [], json_encode(['valid' => true])),
+        ]);
+        $http = new Client(['handler' => HandlerStack::create($mock)]);
+        $api = new ApiClient($config, $http);
+        $configCache = new ConfigCache($api);
+        $guardCache = new GuardCache($api);
+        $htmlStore = new HtmlStore();
+        $tokenSigner = new TokenSigner($config);
+        $cspBuilder = new CspBuilder($config);
+        $core = new Core($config, $api, new Pow($config), $configCache);
+        $injector = new GuardInjector($config, $tokenSigner, $htmlStore, $guardCache, $configCache);
+        $middleware = new Middleware($config, $core, $api, $configCache, $guardCache, $htmlStore, $cspBuilder, $injector, $tokenSigner, new Pow($config));
+
+        $request = new ServerRequest('GET', '/docs');
+        $request = $request->withHeader('User-Agent', 'Mozilla/5.0 Chrome/120');
+        $handler = $this->createMock(RequestHandlerInterface::class);
+        $handler->expects($this->once())->method('handle')->willReturn(new Psr7Response(200, ['Content-Type' => 'text/html'], '<html><body>docs</body></html>'));
+        $response = $middleware->process($request, $handler);
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertStringContainsString('docs', (string)$response->getBody());
     }
 }

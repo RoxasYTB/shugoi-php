@@ -68,7 +68,7 @@ class BlockPage
     {
         $locale = $ctx['locale'] ?? 'en';
         $remaining = $ctx['remainingSeconds'] ?? 60;
-        return self::shield($locale, Locales::get($locale, 'rateLimitTitle'), Locales::get($locale, 'rateLimitBody', self::formatTime($remaining, $locale)), Locales::get($locale, 'rateLimitBadge'), $ctx['host'] ?? null, $remaining);
+        return self::shield($locale, Locales::get($locale, 'rateLimitTitle'), Locales::get($locale, 'rateLimitBody', self::formatRemaining($remaining)), Locales::get($locale, 'rateLimitBadge'), $ctx['host'] ?? null, $remaining);
     }
 
     public static function headless(array $ctx): string
@@ -77,14 +77,14 @@ class BlockPage
         return self::shield($locale, Locales::get($locale, 'blockedTitle'), Locales::get($locale, 'devtoolsBody'), Locales::get($locale, 'blockedBadge'), $ctx['host'] ?? null);
     }
 
-    private static function formatTime(int $seconds, string $locale): string
+    /** Format du temps restant — parité exacte avec core.ts (timeStr). */
+    private static function formatRemaining(int $seconds): string
     {
-        if ($seconds >= 3600) {
-            return sprintf('%dh %dmin', intdiv($seconds, 3600), intdiv($seconds % 3600, 60));
+        $mins = intdiv($seconds, 60);
+        $secs = $seconds % 60;
+        if ($mins > 0) {
+            return $mins . ' min' . ($mins > 1 ? 's' : '') . ($secs > 0 ? ' ' . $secs . ' s' : '');
         }
-        if ($seconds >= 60) {
-            return sprintf('%d min %ds', intdiv($seconds, 60), $seconds % 60);
-        }
-        return "{$seconds}s";
+        return $secs . ' seconde' . ($secs > 1 ? 's' : '');
     }
 }

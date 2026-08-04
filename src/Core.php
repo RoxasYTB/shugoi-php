@@ -145,21 +145,41 @@ class Core
 
         // Rate limit check — activé uniquement si le flag est explicitement vrai.
         if ($flags['enableRateLimit'] ?? false) {
-            $rl = $this->api->checkRateLimit($ip, ['host' => $ctx['host'] ?? '', 'path' => $path]);
+            $rl = $this->api->checkRateLimit($ip, [
+                'ip' => $ip,
+                'userAgent' => $ua,
+                'middleware' => true,
+            ]);
             if (!($rl['allowed'] ?? true)) {
                 $resetAt = $rl['resetAt'] ?? (time() + 60);
-                if ($resetAt > 100000000000) $resetAt = (int)($resetAt / 1000);
-                $remaining = max(1, $resetAt - time());
+                if ($resetAt > 100000000000) $resetAt = (int)ceil($resetAt / 1000);
+                $remaining = max(0, $resetAt - time());
+                $timeStr = $this->formatRemaining($remaining);
                 $locale = LocaleResolver::resolve($this->config->locale, $ctx['acceptLanguage'] ?? null);
+                $body = null;
+                if (is_callable($this->config->blockPage)) {
+                    $body = ($this->config->blockPage)([
+                        'reason' => 'rate_limit',
+                        'title' => Locales::get($locale, 'rateLimitTitle'),
+                        'message' => Locales::get($locale, 'rateLimitBody', $timeStr),
+                        'badge' => Locales::get($locale, 'rateLimitBadge'),
+                        'host' => $ctx['host'] ?? '',
+                        'remainingSeconds' => $remaining,
+                        'locale' => $locale,
+                    ]);
+                }
+                if ($body === null) {
+                    $body = BlockPage::rateLimit([
+                        'locale' => $locale,
+                        'remainingSeconds' => $remaining,
+                        'host' => $ctx['host'] ?? null,
+                    ]);
+                }
                 return [
                     'block' => true,
                     'status' => 429,
                     'contentType' => 'text/html; charset=utf-8',
-                    'body' => BlockPage::rateLimit([
-                        'locale' => $locale,
-                        'remainingSeconds' => $remaining,
-                        'host' => $ctx['host'] ?? null,
-                    ]),
+                    'body' => $body,
                 ];
             }
         }
@@ -169,6 +189,7 @@ class Core
         if ($enableHeadless !== false && $ua !== '' && !$this->isTrustedBot($ua, $ip)) {
             foreach ($this->config->headlessPatterns as $pattern) {
                 if (preg_match($pattern, $ua)) {
+                    $this->api->sendEvent('headless');
                     return [
                         'block' => true,
                         'status' => $this->config->blockStatus,
@@ -239,7 +260,7 @@ class Core
         $prefix = rtrim($prefix, '/');
         $path = $this->safeChallengePath($ctx['path'] ?? '/');
         $chalUrl = $prefix . '/__sg_challenge?ts=' . $ts . '&salt=' . $salt
-            . '&diff=' . $this->config->powDifficulty . '&path=' . urlencode($prefix . $path);
+            . '&diff=' . $this->config->powDifficulty . '&path=' . rawurlencode($prefix . $path);
         return [
             'block' => true,
             'status' => 307,
@@ -305,8 +326,20 @@ class Core
         $now = time();
         if (!$force && $now - $this->lastValidationWarn < self::VALIDATION_WARN_INTERVAL) return;
         $this->lastValidationWarn = $now;
+        $this->api->sendEvent('validation_failed');
         error_log('[shugoi] La validation de la clé a échoué pour le siteKey ' . $this->config->siteKey . '.');
         error_log('[shugoi] La protection reste active, mais cette installation n\'est pas authentifiée.');
         error_log('[shugoi] Vérifiez `siteKey` et `secret` : https://shugoi.com/docs#validation');
+    }
+
+    /** Format du temps restant — parité exacte avec core.ts (timeStr). */
+    private function formatRemaining(int $seconds): string
+    {
+        $mins = intdiv($seconds, 60);
+        $secs = $seconds % 60;
+        if ($mins > 0) {
+            return $mins . ' min' . ($mins > 1 ? 's' : '') . ($secs > 0 ? ' ' . $secs . ' s' : '');
+        }
+        return $secs . ' seconde' . ($secs > 1 ? 's' : '');
     }
 }

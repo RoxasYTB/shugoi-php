@@ -33,9 +33,10 @@ class ShugoiIntegrationTest extends TestCase
         ]);
         $queue = [];
         $whitelist = ['whitelistedMachines' => [], 'detectionFlags' => [], 'skipPaths' => []];
-        // validate-key, whitelist, guard-detect, guard…
-        $queue[] = new Response(200, [], json_encode(['valid' => true]));
+        // Parité middleware.ts : le check skipPaths (GET /whitelist) est AVANT
+        // core.evaluate (donc avant validate-key).
         $queue[] = new Response(200, [], json_encode($whitelist));
+        $queue[] = new Response(200, [], json_encode(['valid' => true]));
         while (count($queue) < $responses) {
             $queue[] = new Response(200, [], count($queue) % 2 === 0 ? 'console.log("detect");' : json_encode($whitelist));
         }

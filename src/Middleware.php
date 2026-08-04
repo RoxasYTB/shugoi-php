@@ -43,6 +43,20 @@ class Middleware implements PsrMiddlewareInterface
             return $this->methodNotAllowed();
         }
 
+        // SkipPaths (SSR direct) : on laisse l'app servir la page sans challenge ni skeleton.
+        // Parité middleware.ts : le check est AVANT core.evaluate (un skipPath hors allowlist
+        // ne doit PAS passer par le challenge PoW ni la protection des assets).
+        if ($this->config->autoInject && $this->config->siteKey !== '') {
+            try {
+                $cfg = $this->configCache->get($this->config->internalUrl);
+                $skip = $cfg['skipPaths'] ?? [];
+                if (in_array($path, $skip, true)) {
+                    return $handler->handle($request);
+                }
+            } catch (\Throwable) {
+            }
+        }
+
         $csp = $this->cspBuilder->build();
 
         $ua = $request->getHeaderLine('User-Agent');
@@ -76,18 +90,6 @@ class Middleware implements PsrMiddlewareInterface
                 $headers = array_merge($headers, $block['headers']);
             }
             return new Response($block['status'], $headers, $block['body']);
-        }
-
-        // SkipPaths (SSR direct) : on laisse l'app servir la page sans challenge ni skeleton.
-        if ($this->config->autoInject && $this->config->siteKey !== '') {
-            try {
-                $cfg = $this->configCache->get($this->config->internalUrl);
-                $skip = $cfg['skipPaths'] ?? [];
-                if (in_array($path, $skip, true)) {
-                    return $handler->handle($request);
-                }
-            } catch (\Throwable) {
-            }
         }
 
         $response = $handler->handle($request);

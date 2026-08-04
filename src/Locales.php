@@ -10,8 +10,8 @@ class Locales
         'blockedTitle' => 'Accès bloqué',
         'blockedBadge' => 'Blocage',
         'tamperTitle' => 'Remplacement de contenu client détecté',
-        'tamperBody' => "Nous avons remarqué que vous avez tenté de modifier manuellement le rendu client via les DevTools. Cette action n'est pas autorisée.",
-        'devtoolsBody' => "L'utilisation des DevTools pour remplacer le contenu ou modifier les requêtes réseau a été détectée.",
+        'tamperBody' => "Nous avons remarqué que vous avez tenté de modifier manuellement le rendu client côté navigateur via les DevTools. Cette pratique est évidemment bloquée par nos services.",
+        'devtoolsBody' => "L'utilisation des DevTools pour remplacer le contenu ou modifier les requêtes réseau a été détectée. L'intégrité de la page est protégée et toute altération est immédiatement bloquée.",
         'retryInSeconds' => 'Il reste %ds avant de pouvoir réessayer.',
     ];
     private const EN = [
@@ -21,8 +21,8 @@ class Locales
         'blockedTitle' => 'Access Blocked',
         'blockedBadge' => 'Blocked',
         'tamperTitle' => 'Client Content Replacement Detected',
-        'tamperBody' => "We noticed you attempted to manually modify the client-side rendering via DevTools. This action is not permitted.",
-        'devtoolsBody' => "Using DevTools to replace content or modify network requests has been detected.",
+        'tamperBody' => "We noticed you attempted to manually modify the client-side rendering via DevTools. This practice is obviously blocked by our services.",
+        'devtoolsBody' => "Using DevTools to replace content or modify network requests has been detected. Page integrity is protected and any alteration is immediately blocked.",
         'retryInSeconds' => 'Retry in %ds.',
     ];
     public static function get(string $locale, string $key, mixed ...$args): string

@@ -64,8 +64,9 @@ class ApiClient
     {
         $url = $this->config->baseUrl . '/event';
         try {
+            // Parité module Node : le payload attend `reason` (pas `type`).
             $this->http->request('POST', $url, [
-                'json' => array_merge(['siteKey' => $this->config->siteKey, 'type' => $type], $data),
+                'json' => array_merge(['siteKey' => $this->config->siteKey, 'reason' => $type], $data),
             ]);
         } catch (\Throwable $e) {
             if ($this->config->debug) error_log("Shugoi sendEvent failed: " . $e->getMessage());

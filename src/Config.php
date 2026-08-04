@@ -8,16 +8,16 @@ class Config
     public const DEFAULT_BLOCK_STATUS = 403;
 
     public const DEFAULT_HEADLESS_PATTERNS = [
-        '/curl/i',
-        '/wget/i',
-        '/python/i',
-        '/Go-http-client/i',
-        '/Java\//i',
+        '/^curl/i',
+        '/^wget/i',
+        '/^python/i',
+        '/^Go-http-client/i',
+        '/^Java\//i',
         '/HTTPie/i',
-        '/node[-_]?fetch/i',
+        '/^node-fetch/i',
         '/axios/i',
-        '/okhttp/i',
-        '/scrapy/i',
+        '/^okhttp/i',
+        '/^scrapy/i',
         '/PowerShell/i',
         '/WinHttp/i',
     ];
@@ -36,7 +36,6 @@ class Config
         '/Slackbot/i',
         '/WhatsApp/i',
         '/TelegramBot/i',
-        '/Mediapartners-Google/i',
     ];
 
     public readonly string $siteKey;

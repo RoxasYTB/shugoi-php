@@ -252,4 +252,88 @@ class CoreTest extends TestCase
         $this->assertTrue($core->isWhitelistedBot('Bingbot'));
         $this->assertFalse($core->isWhitelistedBot('Mozilla/5.0 Chrome/120'));
     }
+
+    public function test_rate_limit_check_blocks_with_block_page(): void
+    {
+        $config = new Config([
+            'siteKey' => 'sg_sk_test_abc',
+            'secret' => 'test_secret',
+            'powDifficulty' => 10,
+            'blockPage' => fn(array $ctx) => 'CUSTOM:' . $ctx['reason'] . ':' . $ctx['remainingSeconds'],
+        ]);
+        $reset = (time() + 90) * 1000;
+        $mock = new MockHandler([
+            new Response(200, [], json_encode(['valid' => true])),
+            new Response(200, [], json_encode(['whitelistedMachines' => [], 'detectionFlags' => ['enableRateLimit' => true], 'skipPaths' => []])),
+            new Response(200, [], json_encode(['allowed' => false, 'resetAt' => $reset])),
+        ]);
+        $http = new Client(['handler' => HandlerStack::create($mock)]);
+        $api = new ApiClient($config, $http);
+        $core = new Core($config, $api, new Pow($config), new ConfigCache($api));
+
+        $result = $core->evaluate(['path' => '/x', 'ua' => '', 'ip' => '1.2.3.4', 'acceptLanguage' => 'en']);
+        $this->assertNotNull($result);
+        $this->assertEquals(429, $result['status']);
+        $this->assertStringContainsString('CUSTOM:rate_limit:90', $result['body']);
+    }
+
+    public function test_rate_limit_check_not_called_when_flag_absent(): void
+    {
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $mock = new MockHandler([
+            new Response(200, [], json_encode(['valid' => true])),
+            new Response(200, [], json_encode(['whitelistedMachines' => [], 'detectionFlags' => [], 'skipPaths' => []])),
+        ]);
+        $http = new Client(['handler' => HandlerStack::create($mock)]);
+        $api = new ApiClient($config, $http);
+        $core = new Core($config, $api, new Pow($config), new ConfigCache($api));
+
+        $result = $core->evaluate(['path' => '/x', 'ua' => '', 'ip' => '1.2.3.4', 'acceptLanguage' => 'en']);
+        $this->assertNull($result);
+    }
+
+    public function test_enable_headless_check_false_disables_headless_block(): void
+    {
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $mock = new MockHandler([
+            new Response(200, [], json_encode(['valid' => true])),
+            new Response(200, [], json_encode(['whitelistedMachines' => [], 'detectionFlags' => ['enableHeadlessCheck' => false], 'skipPaths' => []])),
+        ]);
+        $http = new Client(['handler' => HandlerStack::create($mock)]);
+        $api = new ApiClient($config, $http);
+        $core = new Core($config, $api, new Pow($config), new ConfigCache($api));
+
+        $result = $core->evaluate(['path' => '/x', 'ua' => 'curl/7.68', 'ip' => '1.2.3.4']);
+        $this->assertNull($result);
+    }
+
+    public function test_headless_block_posts_event_with_reason(): void
+    {
+        $config = new Config(['siteKey' => 'sg_sk_test_abc', 'secret' => 'test_secret', 'powDifficulty' => 10]);
+        $mock = new MockHandler([
+            new Response(200, [], json_encode(['valid' => true])),
+            new Response(200, [], json_encode(['whitelistedMachines' => [], 'detectionFlags' => [], 'skipPaths' => []])),
+            new Response(200, [], '{}'),
+        ]);
+        $history = [];
+        $stack = HandlerStack::create($mock);
+        $stack->push(\GuzzleHttp\Middleware::history($history));
+        $http = new Client(['handler' => $stack]);
+        $api = new ApiClient($config, $http);
+        $core = new Core($config, $api, new Pow($config), new ConfigCache($api));
+
+        $result = $core->evaluate(['path' => '/x', 'ua' => 'curl/7.68', 'ip' => '1.2.3.4']);
+        $this->assertEquals(403, $result['status']);
+        $event = null;
+        foreach ($history as $h) {
+            if (str_ends_with($h['request']->getUri()->getPath(), '/event')) {
+                $event = $h;
+                break;
+            }
+        }
+        $this->assertNotNull($event);
+        $body = json_decode((string)$event['request']->getBody(), true);
+        $this->assertEquals('headless', $body['reason']);
+        $this->assertArrayNotHasKey('type', $body);
+    }
 }
