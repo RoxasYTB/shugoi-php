@@ -93,6 +93,12 @@ class SkeletonGenerator
             . "h2{font-family:\\x27Alex Brush\\x27,Georgia,\\x27Times New Roman\\x27,serif;font-size:2.2rem;color:#E87090;font-weight:400;margin:0 auto .6rem}"
             . '#c p.desc{font-size:.9rem;color:#555;line-height:1.8;max-width:380px;margin:0 auto}'
             . '#c p.ft{font-size:.55rem;color:#E87090;margin-top:1.8rem}'
+            . '@media (prefers-color-scheme:dark){html,body{background:#16101c}'
+            . '#c{background:#241a30;border-color:rgba(241,232,245,.14);box-shadow:0 10px 30px rgba(0,0,0,.4)}'
+            . '#c .bdg{background:rgba(233,137,159,.16);border-color:rgba(233,137,159,.5);color:#e9899f}'
+            . '#c h2{color:#e9899f}'
+            . '#c p.desc{color:#a795b4}'
+            . '#c p.ft{color:#e9899f}}'
             . '</style></head><body><div id=c><img src=https://shugoi.com/favicon-block.png class=l>'
             . '<img src=https://shugoi.com/brand-block.png class=b><div class=bdg>"+(badge||"' . $fbBadge . '")+"</div>'
             . '<h2>"+(title||"' . $fbTitle . '")+"</h2><p class=desc>"+(msg||"")+"</p>'
